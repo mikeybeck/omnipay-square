@@ -10,6 +10,7 @@ use SquareConnect;
  */
 class RefundRequest extends AbstractRequest
 {
+
     public function getAccessToken()
     {
         return $this->getParameter('accessToken');
@@ -100,32 +101,54 @@ class RefundRequest extends AbstractRequest
         return $this->setParameter('customerCardId', $value);
     }
 
+    public function getTenderId()
+    {
+        return $this->getParameter('tenderId');
+    }
+
+    public function setTenderId($value)
+    {
+        return $this->setParameter('tenderId', $value);
+    }
+
+    public function getReason()
+    {
+        return $this->getParameter('reason');
+    }
+
+    public function setReason($value)
+    {
+        return $this->setParameter('reason', $value);
+    }
+
     public function getData()
     {
         $data = [];
 
-        $data['idempotency_key'] = $this->getIdempotencyKey();
-        $data['amount_money'] = [
-            'amount' => $this->getAmountInteger(),
-            'currency' => $this->getCurrency()
-        ];
+		$data['location_id'] = $this->getLocationId();
+		$data['transaction_id'] = $this->getTransactionId();
+		$data['body'] = new \SquareConnect\Model\CreateRefundRequest();
+		$data['body']->setIdempotencyKey($this->getIdempotencyKey());
+		$data['body']->setTenderId($this->getTenderId());
+		$data['body']->setReason($this->getReason());
+		$money = new \SquareConnect\Model\Money();
+		$money->setAmount($this->getAmountInteger());
+		$money->setCurrency($this->getCurrency());
+		$data['body']->setAmountMoney($money);
 
         return $data;
     }
 
     public function sendData($data)
     {
+
         SquareConnect\Configuration::getDefaultConfiguration()->setAccessToken($this->getAccessToken());
 
         $api_instance = new SquareConnect\Api\TransactionsApi();
-        $transaction = $api_instance->retrieveTransaction($this->getLocationId(), $this->getTransactionReference());
-        $orders = array();
-        $lineItems = $transaction->getTransaction()->getTenders();
 
-        $data['tender_id'] = $lineItems[0]['id'];
 
         try {
-            $result = $api_instance->createRefund($this->getLocationId(), $this->getTransactionReference(), $data);
+            $result = $api_instance->createRefund($data['location_id'], $data['transaction_id'], $data['body']);
 
             if ($error = $result->getErrors()) {
                 $response = [
@@ -135,10 +158,20 @@ class RefundRequest extends AbstractRequest
                 ];
             } else {
                 $response = [
-                    'status' => 'success',
-                    'transactionId' => $result->getRefund()['transaction_id'],
-                    'referenceId' => $result->getRefund()['tender_id']
+                    'status' 			=> $result->getRefund()->getStatus(),
+                    'id' 				=> $result->getRefund()->getId(),
+                    'location_id' 		=> $result->getRefund()->getLocationId(),
+                    'transaction_id'	=> $result->getRefund()->getTransactionId(),
+                    'tender_id'			=> $result->getRefund()->getTenderId(),
+                    'created_at'		=> $result->getRefund()->getCreatedAt(),
+                    'reason'			=> $result->getRefund()->getReason(),
+                    'amount'			=> $result->getRefund()->getAmountMoney()->getAmount(),
+                    'currency'          => $result->getRefund()->getAmountMoney()->getCurrency(),
                 ];
+                $processing_fee = $result->getRefund()->getProcessingFeeMoney();
+                if (!empty($processing_fee)) {
+                    $response['processing_fee']	= $processing_fee->getAmount();
+				}
             }
             return $this->createResponse($response);
         } catch (Exception $e) {
